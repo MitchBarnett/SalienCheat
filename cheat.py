@@ -235,10 +235,7 @@ class Saliens(requests.Session):
                       reverse=True,
                       key=lambda x: x['sort_key'],
                       )
-
-    def represent_clan(self, clan_id):
-        return self.spost('ITerritoryControlMinigameService/RepresentClan', {'clanid': clan_id})
-
+    
     def report_score(self, score):
         return self.spost('ITerritoryControlMinigameService/ReportScore', {'score': score})
 
@@ -374,7 +371,6 @@ while not game.is_access_token_valid():
 
 # display current stats
 game.log("Getting player info...")
-game.represent_clan(4777282)
 game.log("Scanning for planets...")
 game.refresh_player_info()
 game.refresh_planet_info()
@@ -457,10 +453,6 @@ try:
                    and time() < deadline
                    and not game.planet['zones'][zone_id]['captured']
                    and game.planet['zones'][zone_id].get('capture_progress', 0) < 0.95):
-
-                if ('clan_info' not in game.player_info
-                   or game.player_info['clan_info']['accountid'] != 0x48e542):
-                    game.represent_clan(0b10010001110010101000010)
 
                 game.log("Fighting in %szone %s (%s) for 110sec",
                          'boss ' if game.planet['zones'][zone_id]['type'] == 4 else '',
