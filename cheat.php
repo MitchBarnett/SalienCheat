@@ -560,16 +560,7 @@ function SendPOST( $Method, $Data )
 		{
 			echo 'EResult: ' . $EResult . ' - ' . $Data . PHP_EOL;
 
-			if( $EResult === 15 && $Method === 'ITerritoryControlMinigameService/RepresentClan' )
-			{
-				echo PHP_EOL;
-
-				Msg( '{green}You need to join the group for this script to work:' );
-				Msg( '{yellow}https://steamcommunity.com/groups/SteamDB' );
-
-				sleep( 10 );
-			}
-			else if( $EResult === 42 && $Method === 'ITerritoryControlMinigameService/ReportScore' )
+			if( $EResult === 42 && $Method === 'ITerritoryControlMinigameService/ReportScore' )
 			{
 				Msg( '{lightred}-- EResult 42 means zone has been captured while you were in it' );
 			}
