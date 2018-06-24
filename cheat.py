@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 """Plays SALIEN for you
 
 pip install requests tqdm
@@ -42,13 +43,13 @@ def get_access_token(force_input=False):
                 if not token_re.match(token):
                     token = ''
                 else:
-                    game.log("Loaded token from token.txt")
+                    game.log("^GRN++^NOR Loaded token from token.txt")
 
     if not token:
         token = _input("Login to steamcommunity.com\n"
                        "Visit https://steamcommunity.com/saliengame/gettoken\n"
                        "Copy the token value and paste here.\n"
-                       "---\n"
+                       "--\n"
                        "Token: "
                        ).strip()
 
@@ -68,6 +69,13 @@ class Saliens(requests.Session):
     player_info = None
     planet = None
     zone_id = None
+    colors = (
+        ('^NOR', '\033[0m'),
+        ('^GRN', '\033[0;32m'),
+        ('^YEL', '\033[0;33m'),
+        ('^RED', '\033[0;31m'),
+        ('^GRY', '\033[0;36m'),
+        )
 
     def __init__(self, access_token):
         super(Saliens, self).__init__()
@@ -97,18 +105,21 @@ class Saliens(requests.Session):
             try:
                 resp = self.post(self.api_url % endpoint, data=form_fields)
 
+                eresult = resp.headers.get('X-eresult', -1)
                 if resp.status_code != 200:
-                    raise Exception("HTTP %s" % resp.status_code)
-
-                if 'X-eresult' in resp.headers:
-                    self.LOG.debug('EResult: %s', resp.headers['X-eresult'])
+                    raise Exception("HTTP %s EResult %s\n%s" % (resp.status_code, eresult, resp.text))
 
                 rdata = resp.json()
                 if 'response' not in rdata:
-                    raise Exception("No response is json")
+                    raise Exception("NoJSON EResult %s" % (resp.status_code, eresult))
             except Exception as exp:
-                self.log("spost error: %s", str(exp))
+                self.log("^RED-- POST %-46s %s", endpoint, str(exp))
+
+                if resp.status_code >= 500:
+                    sleep(2)
+                    continue
             else:
+                self.log("^GRY   POST %-46s HTTP %s EResult %s", endpoint, resp.status_code, eresult)
                 data = rdata['response']
 
             if not retry:
@@ -126,14 +137,21 @@ class Saliens(requests.Session):
             try:
                 resp = self.get(self.api_url % endpoint, params=query_params)
 
+                eresult = resp.headers.get('X-eresult', -1)
                 if resp.status_code != 200:
-                    raise Exception("HTTP %s" % resp.status_code)
+                    raise Exception("HTTP %s EResult %s\n%s" % (resp.status_code, eresult, resp.text))
+
                 rdata = resp.json()
                 if 'response' not in rdata:
-                    raise Exception("No response is json")
+                    raise Exception("NoJSON EResult %s" % (resp.status_code, eresult))
             except Exception as exp:
-                self.log("spost error: %s", str(exp))
+                self.log("^RED-- GET  %-46s %s", endpoint, str(exp))
+
+                if resp.status_code >= 500:
+                    sleep(2)
+                    continue
             else:
+                self.log("^GRY   GET  %-46s HTTP %s EResult %s", endpoint, resp.status_code, eresult)
                 data = rdata['response']
 
             if not retry:
@@ -235,7 +253,7 @@ class Saliens(requests.Session):
                       reverse=True,
                       key=lambda x: x['sort_key'],
                       )
-    
+
     def report_score(self, score):
         return self.spost('ITerritoryControlMinigameService/ReportScore', {'score': score})
 
@@ -265,21 +283,21 @@ class Saliens(requests.Session):
                                desc="Player Level",
                                total=0,
                                initial=0,
-                               bar_format='{desc:<22} {percentage:3.0f}% |{bar}| {n_fmt}/{total_fmt} | {remaining:>8}',
+                               bar_format='{desc:<18} {percentage:3.0f}% |{bar}| {n_fmt}/{total_fmt} | {remaining:>8}',
                                )
         self.planet_pbar = tqdm(ascii=True,
                                 dynamic_ncols=True,
                                 desc="Planet progress",
                                 total=0,
                                 initial=0,
-                                bar_format='{desc:<22} {percentage:3.0f}% |{bar}| {remaining:>8}',
+                                bar_format='{desc:<18} {percentage:3.0f}% |{bar}| {remaining:>8}',
                                 )
         self.zone_pbar = tqdm(ascii=True,
                               dynamic_ncols=True,
                               desc="Zone progress",
                               total=0,
                               initial=0,
-                              bar_format='{desc:<22} {percentage:3.0f}% |{bar}| {remaining:>8}',
+                              bar_format='{desc:<18} {percentage:3.0f}% |{bar}| {remaining:>8}',
                               )
 
     def end(self):
@@ -289,6 +307,11 @@ class Saliens(requests.Session):
 
     def pbar_refresh(self):
         mul = 100000000
+        dmap = {
+            1: 'Easy',
+            2: 'Medium',
+            3: 'Hard',
+            }
 
         if not self.player_info:
             return
@@ -316,7 +339,7 @@ class Saliens(requests.Session):
             pbar.n = n
 
         # level progress bar
-        self.level_pbar.desc = "Player Level {level}".format(**player_info)
+        self.level_pbar.desc = "Level {level}".format(**player_info)
         self.level_pbar.total = int(player_info['next_level_score'])
         avg_time(self.level_pbar, int(player_info['score']))
         self.level_pbar.refresh()
@@ -327,11 +350,11 @@ class Saliens(requests.Session):
             state = planet['state']
             planet_progress = (mul if state['captured']
                                else int(state.get('capture_progress', 0) * mul))
-            self.planet_pbar.desc = "Planet ({id}) progress".format(**planet)
+            self.planet_pbar.desc = "Planet #{}".format(planet['id'])
             self.planet_pbar.total = mul
             avg_time(self.planet_pbar, planet_progress)
         else:
-            self.planet_pbar.desc = "Planet progress"
+            self.planet_pbar.desc = "Planet"
             self.planet_pbar.n = 0
             self.planet_pbar.total = 0
             self.planet_pbar.last_print_t = time()
@@ -343,11 +366,13 @@ class Saliens(requests.Session):
             zone = self.planet['zones'][self.zone_id]
             zone_progress = (mul if zone['captured']
                              else int(zone.get('capture_progress', 0) * mul))
-            self.zone_pbar.desc = "Zone ({zone_position}) progress".format(**zone)
+            self.zone_pbar.desc = "Zone #{} - {}".format(zone['zone_position'],
+                                                         dmap.get(zone['difficulty'],
+                                                                  zone['difficulty']))
             self.zone_pbar.total = mul
             avg_time(self.zone_pbar, zone_progress)
         else:
-            self.zone_pbar.desc = "Zone  progress"
+            self.zone_pbar.desc = "Zone"
             self.zone_pbar.n = 0
             self.zone_pbar.total = 0
             self.zone_pbar.last_print_t = time()
@@ -355,11 +380,38 @@ class Saliens(requests.Session):
         self.zone_pbar.refresh()
 
     def log(self, text, *args):
-        self.level_pbar.write(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " | " + (text % args))
+        text += "^NOR"
+
+        for k, v in self.colors:
+            text = text.replace(k, v)
+
+        self.level_pbar.write(datetime.now().strftime("%H:%M:%S") + " | " + (text % args))
         self.pbar_refresh()
 
+    def print_planet(self, planet):
+        planet_id = planet['id']
+        planet_name = planet['state']['name'].split('Planet', 1)[1].replace('_', ' ')
+        curr_players = planet['state']['current_players']
+        n_boss = len(planet['boss_zones'])
+        n_hard = len(planet['hard_zones'])
+        n_med = len(planet['medium_zones'])
+        n_easy = len(planet['easy_zones'])
 
-# ------- MAIN ----------
+        status = ('yes' if planet['state']['captured']
+                  else "{:.2f}%%".format(planet['state'].get('capture_progress', 0) * 100))
+
+        game.log("^YEL>>^NOR Planet ^GRN#{:>3}^NOR - ^YEL{:>2}^NOR / ^YEL{:>2}^NOR / ^YEL{:>2}^NOR "
+                 "/ ^YEL{:>2}^NOR B/H/M/E - Captured: ^YEL{}^NOR Players: ^YEL{:,}^NOR ^GRN({})"
+                 "".format(planet_id,
+                           n_boss, n_hard, n_med, n_easy,
+                           status,
+                           curr_players,
+                           planet_name,
+                           )
+                 )
+
+
+# ----- MAIN -------
 
 
 game = Saliens(None)
@@ -370,21 +422,29 @@ while not game.is_access_token_valid():
     game.access_token = get_access_token(True)
 
 # display current stats
-game.log("Getting player info...")
-game.log("Scanning for planets...")
+game.log("^GRN++^NOR Getting player info...")
+game.log("^GRN++^NOR Scanning for planets...")
 game.refresh_player_info()
 game.refresh_planet_info()
 planets = game.get_uncaptured_planets()
 
+# show planet info
+game.log("^GRN++^NOR Found %s uncaptured planets: %s",
+         len(planets),
+         [int(x['id']) for x in planets])
+
+for planet in planets:
+    game.print_planet(planet)
+
 # join battle
 try:
     while planets:
-        game.log("Found %s uncaptured planets: %s", len(planets), [x['id'] for x in planets])
         planet_id = planets[0]['id']
         game.leave_zone()
 
+        # determine which planet to join
         if not game.planet or game.planet['id'] != planet_id:
-            game.log("Joining toughest planet %s..", planets[0]['id'])
+            game.log("^GRN++^NOR Joining toughest planet ^GRN%s^NOR..", planets[0]['id'])
 
             for i in range(3):
                 game.join_planet(planet_id)
@@ -394,34 +454,29 @@ try:
                 if game.player_info['active_planet'] == planet_id:
                     break
 
-                game.log("Failed to join planet. Retrying...")
+                game.log("^RED-- Failed to join planet. Retrying...")
                 game.leave_planet()
 
             if i >= 2 and game.player_info['active_planet'] != planet_id:
                 continue
 
         else:
-            game.log("Remaining on current planet")
+            game.log("^GRN++^NOR Remaining on current planet")
 
         game.refresh_planet_info()
 
-        planet_id = game.planet['id']
-        planet_name = game.planet['state']['name']
-        curr_players = game.planet['state']['current_players']
+        # show planet info
         giveaway_appds = game.planet['giveaway_apps']
-        n_boss = len(game.planet['boss_zones'])
-        n_hard = len(game.planet['hard_zones'])
-        n_med = len(game.planet['medium_zones'])
-        n_easy = len(game.planet['easy_zones'])
+        top_clans = [c['clan_info']['url'] for c in game.planet.get('top_clans', [])][:5]
 
-        game.log("Planet name: %s (%s)", planet_name, planet_id)
-        game.log("Current players: %s", curr_players)
-        game.log("Giveaway AppIDs: %s", giveaway_appds)
-        game.log("Zones: %s boss, %s hard, %s medium, %s easy", n_boss, n_hard, n_med, n_easy)
+        game.print_planet(game.planet)
+        game.log("^YEL>>^NOR Giveaway AppIDs: %s", giveaway_appds)
+        if top_clans:
+            game.log("^YEL>>^NOR Top clans: %s", ', '.join(top_clans))
         if 'clan_info' not in game.player_info or game.player_info['clan_info']['accountid'] != 0O022162502:
-            game.log("Join SteamDB: https://steamcommunity.com/groups/SteamDB")
+            game.log("^YEL>>^NOR Join SteamDB: https://steamcommunity.com/groups/SteamDB")
 
-        # zone
+        # selecting zone
         while game.planet and game.planet['id'] == planets[0]['id']:
             zones = (game.planet['boss_zones']
                      + game.planet['hard_zones']
@@ -443,18 +498,18 @@ try:
                 3: 'hard',
                 }
 
-            game.log("Selecting %szone %s (%s)....",
-                     'boss ' if game.planet['zones'][zone_id]['type'] == 4 else '',
+            game.log("^GRN++^NOR Selecting %szone ^YEL%s^NOR (%s)....",
+                     '^REDboss^NOR ' if game.planet['zones'][zone_id]['type'] == 4 else '',
                      zone_id,
                      dmap.get(difficulty, difficulty),
                      )
 
+            # fight in the zone
             while (game.planet
                    and time() < deadline
                    and not game.planet['zones'][zone_id]['captured']
                    and game.planet['zones'][zone_id].get('capture_progress', 0) < 0.95):
 
-                game.log("Fighting in %szone %s (%s) for 110sec",
                          'boss ' if game.planet['zones'][zone_id]['type'] == 4 else '',
                          zone_id,
                          dmap.get(difficulty, difficulty))
@@ -464,6 +519,7 @@ try:
 
                 stoptime = time() + 110
 
+                # refresh progress bars while in battle
                 for i in count(start=8):
                     if time() >= stoptime:
                         break
@@ -476,14 +532,19 @@ try:
                     game.pbar_refresh()
 
                 score = 120 * (5 * (2**(difficulty - 1)))
-                game.log("Submitting score of %s...", score)
+                game.log("^GRN++^NOR Submitting score of ^GRN%s^NOR...", score)
                 game.report_score(score)
 
                 game.refresh_player_info()
                 game.refresh_planet_info()
 
-            game.log("Rescanning planets...")
+            # Rescan planets after zone is finished
+            game.log("^GRN++^NOR Rescanning planets...")
             planets = game.get_uncaptured_planets()
+
+            for planet in planets:
+                game.print_planet(planet)
+
             game.refresh_planet_info()
 
 except KeyboardInterrupt:
@@ -491,5 +552,5 @@ except KeyboardInterrupt:
     sys.exit()
 
 # end game
-game.log("No uncaptured planets left. We done!")
+game.log("^GRN++^NOR No uncaptured planets left. We done!")
 game.close()

@@ -24,7 +24,7 @@ else
 	// otherwise, read it from disk
 	$Token = trim( file_get_contents( __DIR__ . '/token.txt' ) );
 	$ParsedToken = json_decode( $Token, true );
-	
+
 	if( is_string( $ParsedToken ) )
 	{
 		$Token = $ParsedToken;
@@ -33,7 +33,7 @@ else
 	{
 		$Token = $ParsedToken[ 'token' ];
 	}
-	
+
 	unset( $ParsedToken );
 }
 
@@ -49,7 +49,10 @@ $WaitTime = 110;
 $KnownPlanets = [];
 $SkippedPlanets = [];
 $CurrentPlanetName = '??';
-$LastZone = ['', 0.0];
+$ZonePaces =
+[
+	'Planet' => 0,
+];
 
 lol_using_goto_in_2018:
 
@@ -89,7 +92,7 @@ do
 
 	do
 	{
-		$Zone = GetFirstAvailableZone( $CurrentPlanet, $LastZone );
+		$Zone = GetFirstAvailableZone( $CurrentPlanet, $ZonePaces );
 	}
 	while( $Zone === null && sleep( 5 ) === 0 );
 
@@ -117,7 +120,7 @@ do
 
 			goto lol_using_goto_in_2018;
 		}
-		
+
 		if( IsThereAnyNewPlanets( $KnownPlanets ) )
 		{
 			Msg( '{lightred}!! Detected a new planet, restarting...' );
@@ -165,10 +168,10 @@ do
 		);
 	}
 
-	Msg( '   {grey}Waiting ' . $WaitTime . ' seconds for the game to end...' );
+	Msg( '   {grey}Waiting ' . $WaitTime . ' seconds for this round to end...' );
 
 	sleep( $WaitTime );
-	
+
 	$Data = SendPOST( 'ITerritoryControlMinigameService/ReportScore', 'access_token=' . $Token . '&score=' . GetScoreForZone( $Zone ) . '&language=english' );
 
 	if( isset( $Data[ 'response' ][ 'new_score' ] ) )
@@ -180,11 +183,11 @@ do
 			'{normal} XP - Current level: {green}' . $Data[ 'new_level' ] .
 			'{normal} (' . number_format( $Data[ 'new_score' ] / $Data[ 'next_level_score' ] * 100, 2 ) . '%)'
 		);
-		
+
 		$Time = ( $Data[ 'next_level_score' ] - $Data[ 'new_score' ] ) / GetScoreForZone( [ 'difficulty' => $Zone[ 'difficulty' ] ] ) * ( $WaitTime / 60 );
 		$Hours = floor( $Time / 60 );
 		$Minutes = $Time % 60;
-		
+
 		Msg(
 			'>> Next level: {yellow}' . number_format( $Data[ 'next_level_score' ] ) .
 			'{normal} XP - Remaining: {yellow}' . number_format( $Data[ 'next_level_score' ] - $Data[ 'new_score' ] ) .
@@ -215,7 +218,7 @@ function GetScoreForZone( $Zone )
 		case 2: $Score = 10; break;
 		case 3: $Score = 20; break;
 	}
-	
+
 	return $Score * 120;
 }
 
@@ -234,13 +237,22 @@ function GetNameForDifficulty( $Zone )
 	return $Boss . $Difficulty;
 }
 
-function GetFirstAvailableZone( $Planet, &$LastZone )
+function GetFirstAvailableZone( $Planet, &$ZonePaces )
 {
 	$Zones = SendGET( 'ITerritoryControlMinigameService/GetPlanet', 'id=' . $Planet . '&language=english' );
 
 	if( empty( $Zones[ 'response' ][ 'planets' ][ 0 ][ 'zones' ] ) )
 	{
 		return null;
+	}
+
+	if( $ZonePaces[ 'Planet' ] != $Planet )
+	{
+		$ZonePaces =
+		[
+			'Planet' => $Planet,
+			'Zones' => [],
+		];
 	}
 
 	global $CurrentPlanetName;
@@ -253,8 +265,8 @@ function GetFirstAvailableZone( $Planet, &$LastZone )
 	$HardZones = 0;
 	$MediumZones = 0;
 	$EasyZones = 0;
-	
-	foreach( $Zones as $Zone )
+
+	foreach( $Zones as &$Zone )
 	{
 		if( empty( $Zone[ 'capture_progress' ] ) )
 		{
@@ -278,13 +290,25 @@ function GetFirstAvailableZone( $Planet, &$LastZone )
 
 		$PaceCutoff = 0.97;
 
-		if( $LastZone[ 0 ] === $Planet . '.' . $Zone[ 'zone_position' ] )
+		if( isset( $ZonePaces[ 'Zones' ][ $Zone[ 'zone_position' ] ] ) )
 		{
-			$PaceCutoff = $Zone[ 'capture_progress' ] - $LastZone[ 1 ];
+			$Paces = $ZonePaces[ 'Zones' ][ $Zone[ 'zone_position' ] ];
+			$Paces[] = $Zone[ 'capture_progress' ];
+			$Differences = [];
 
-			Msg( '-- Current pace for Zone {green}' . $Zone[ 'zone_position' ] . '{normal} is {green}+' . number_format( $PaceCutoff * 100, 2 ) . '%' );
+			for( $i = count( $Paces ) - 1; $i > 0; $i-- )
+			{
+				$Differences[] = $Paces[ $i ] - $Paces[ $i - 1 ];
+			}
 
-			$PaceCutoff = 0.95 - $PaceCutoff;
+			$PaceCutoff = array_sum( $Differences ) / count( $Differences );
+
+			if ( $PaceCutoff > 0.02 )
+			{
+				Msg( '-- Current pace for Zone {green}' . $Zone[ 'zone_position' ] . '{normal} is {green}+' . number_format( $PaceCutoff * 100, 2 ) . '%' );
+			}
+
+			$PaceCutoff = 0.98 - $PaceCutoff;
 		}
 
 		// If a zone is close to completion, skip it because Valve does not reward points
@@ -303,7 +327,26 @@ function GetFirstAvailableZone( $Planet, &$LastZone )
 
 		$CleanZones[] = $Zone;
 	}
-	
+
+	unset( $Zone );
+
+	foreach( $Zones as $Zone )
+	{
+		if( !isset( $ZonePaces[ 'Zones' ][ $Zone[ 'zone_position' ] ] ) )
+		{
+			$ZonePaces[ 'Zones' ][ $Zone[ 'zone_position' ] ] = [ $Zone[ 'capture_progress' ] ];
+		}
+		else
+		{
+			if( count( $ZonePaces[ 'Zones' ][ $Zone[ 'zone_position' ] ] ) > 4 )
+			{
+				array_shift( $ZonePaces[ 'Zones' ][ $Zone[ 'zone_position' ] ] );
+			}
+
+			$ZonePaces[ 'Zones' ][ $Zone[ 'zone_position' ] ][] = $Zone[ 'capture_progress' ];
+		}
+	}
+
 	if( empty( $CleanZones ) )
 	{
 		return false;
@@ -315,7 +358,7 @@ function GetFirstAvailableZone( $Planet, &$LastZone )
 		{
 			return $b[ 'zone_position' ] - $a[ 'zone_position' ];
 		}
-		
+
 		return $b[ 'difficulty' ] - $a[ 'difficulty' ];
 	} );
 
@@ -325,12 +368,6 @@ function GetFirstAvailableZone( $Planet, &$LastZone )
 	$Zone[ 'easy_zones' ] = $EasyZones;
 	$Zone[ 'planet_captured' ] = $PlanetCaptured;
 	$Zone[ 'planet_players' ] = $PlanetPlayers;
-
-	$LastZone =
-	[
-		$Planet . '.' . $Zone[ 'zone_position' ],
-		$Zone[ 'capture_progress' ]
-	];
 
 	return $Zone;
 }
@@ -386,7 +423,7 @@ function GetFirstAvailablePlanet( $SkippedPlanets, &$KnownPlanets )
 
 		foreach( $Zones[ 'response' ][ 'planets' ][ 0 ][ 'zones' ] as $Zone )
 		{
-			if( !empty( $Zone[ 'capture_progress' ] ) && $Zone[ 'capture_progress' ] > 0.97 )
+			if( !empty( $Zone[ 'capture_progress' ] ) && $Zone[ 'capture_progress' ] > 0.93 )
 			{
 				continue;
 			}
@@ -509,7 +546,7 @@ function LeaveCurrentGame( $Token, $LeaveCurrentPlanet = 0 )
 	if( $LeaveCurrentPlanet > 0 && $LeaveCurrentPlanet !== $ActivePlanet )
 	{
 		Msg( '   Leaving planet {yellow}' . $ActivePlanet . '{normal} because we want to be on {yellow}' . $LeaveCurrentPlanet );
-	
+
 		SendPOST( 'IMiniGameService/LeaveGame', 'access_token=' . $Token . '&gameid=' . $ActivePlanet );
 	}
 
@@ -581,7 +618,7 @@ function SendPOST( $Method, $Data )
 	while( !isset( $Data[ 'response' ] ) && sleep( 1 ) === 0 );
 
 	curl_close( $c );
-	
+
 	return $Data;
 }
 
@@ -609,14 +646,14 @@ function SendGET( $Method, $Data )
 	do
 	{
 		Msg( '   {grey}Sending ' . $Method . '...' );
-		
+
 		$Data = curl_exec( $c );
 		$Data = json_decode( $Data, true );
 	}
 	while( !isset( $Data[ 'response' ] ) && sleep( 1 ) === 0 );
 
 	curl_close( $c );
-	
+
 	return $Data;
 }
 
