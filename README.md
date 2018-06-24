@@ -4,8 +4,6 @@
 
 1. Join any group you want
 2. Open https://steamcommunity.com/saliengame/gettoken and save it as `token.txt` in same folder as `cheat.php`
-3. Select PHP or Python version of the script, you don't need both
-
 ## PHP
 
 📣 [Check this reddit thread for a complete guide and troubleshooting](https://redd.it/8t5w8v)
@@ -32,24 +30,6 @@ You can also provide token directly in CLI, to ease running multiple accounts:
 php cheat.php token1
 php cheat.php token2
 ```
-
-## Python
-
-### Linux/Cygwin
-
-0. (optional) Setup virtual env: `virtualenv env && source env/bin/activate`
-1. `pip install requests tqdm`
-2. Run the script: `python cheat.py [token]`
-
-### Mac
-
-0. (optional) Launch the App Store and download any updates for macOS. Newer versions of macOS have Python 2.7.10 included by default.
-1. Extract the contents of this script to the Downloads folder.
-2. Launch Terminal and run the following scripts:
-   1. `sudo easy_install pip`
-   2. `pip install requests tqdm`
-   3. `python downloads/cheat.py [token]`
-
 ## Vagrant
 
 1. Install [vagrant](https://www.vagrantup.com/downloads.html) and [VirtualBox](https://www.virtualbox.org/wiki/Downloads)
